@@ -1,84 +1,33 @@
-from flask import Flask, redirect, url_for, render_template, request, session, flash
+from flask import Flask, request, Response, jsonify, send_from_directory, abort
 from datetime import timedelta
-from flask_sqlalchemy import SQLAlchemy
+import cv2
+import os
+import logging
+from logging import Formatter, FileHandler
+import imutils
+import numpy as np
+
+from ocr import process_image
 
 app = Flask(__name__)
-app.secret_key = "hello"
-app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///users.sqlite3'
-app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
-app.permanent_session_lifetime = timedelta(minutes=5)
 
-db = SQLAlchemy(app)
-
-class users(db.Model):
-    _id = db.Column("id", db.Integer, primary_key=True)
-    name = db.Column(db.String(100))
-    email = db.Column(db.String(100))
-
-    def __init__(self, name, email):
-        self.name = name
-        self.email = email
-
-@app.route("/")
+@app.route('/')
 def home():
-    return render_template("index.html")
+    return home()
 
-@app.route("/view")
-def view():
-    return render_template("view.html", values=users.query.all())
-
-@app.route("/login", methods=["POST", "GET"])
-def login():
-    if request.method == "POST":
-        session.permanent = True
-        user = request.form["nm"]
-        session["user"] = user
-
-        found_user = users.query.filter_by(name=user).first()
-        if found_user:
-            session["email"] = found_user.email
+@app.route('/ocr', methods=['POST'])
+def ocr():
+    try:
+        url = request.json['image_url']
+        if 'jpg' in url:
+            output = process_image(url)
+            return jsonify({"output",output})
         else:
-            usr = users(user, "")
-            db.session.add(usr)
-            db.session.commit()
-
-        flash("Login Successful")
-        return redirect(url_for("user"))
-    else:
-        if "user" in session:
-            flash("Already Logged In")
-            return redirect(url_for("user"))
-
-        return render_template("login.html")
-
-@app.route("/user", methods=["POST", "GET"])
-def user():
-    email = None
-    if "user" in session:
-        user = session["user"]
-
-        if request.method == "POST":
-            email = request.form["email"]
-            session["email"] = email
-            found_user = users.query.filter_by(name=user).first()
-            found_user.email = email
-            db.session.commit()
-            flash("Email was saved")
-        else:
-            if "email" in session:
-                email = session["email"]
-
-        return render_template("user.html", email=email)
-    else:
-        flash("You're not logged in")
-        return redirect(url_for("login"))
-
-@app.route("/logout")
-def logout():
-    flash(f"You have been logged out", "info")
-    session.pop("user", None)
-    session.pop("email", None)
-    return redirect(url_for("login"))
+            return jsonify({"error" : "only .jpg files"})
+    except:
+        return jsonify(
+            {"error": "Did you mean to send: {'image_url': 'some_jpeg_url'}"}
+        )
 
 if __name__ == "__main__":
     app.run(debug=True)
